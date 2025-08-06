@@ -93,8 +93,6 @@ if uploaded_file is not None:
             plt.tight_layout()
             st.pyplot(fig_elbow)
             
-            
-            
             cluster_range = st.sidebar.slider("Pilih Jumlah Cluster (K)", min_value=2, max_value=10, value=3)
 
             kmeans = KMeans(n_clusters=cluster_range, random_state=42)
@@ -223,46 +221,69 @@ if uploaded_file is not None:
         st.write("### Prediksi Cluster untuk Input Manual")
 
         if 'df_filtered' in locals():
-            with st.form("manual_input"):
-                st.write("Masukkan nilai fitur:")
-                input_data = {}
-                for col in selected_columns:
-                    min_val = float(df[col].min())
-                    max_val = float(df[col].max())
-                    default_val = float(df[col].mean())
-                    input_data[col] = st.number_input(f"{col}", min_value=min_val, max_value=max_val, value=default_val)
+            # Pastikan kolom 'namapemda' dan 'tahun' ada
+            if 'namapemda' in df_filtered.columns and 'tahun' in df_filtered.columns:
 
-                submitted = st.form_submit_button("Prediksi Cluster")
+                # Pilih tahun
+                selected_year = st.selectbox(
+                    "Pilih Tahun:",
+                    sorted(df_filtered['tahun'].unique())
+                )
 
-                if submitted:
-                    input_df = pd.DataFrame([input_data])
+                # Filter data sesuai tahun
+                df_year_filtered = df_filtered[df_filtered['tahun'] == selected_year]
 
-                    scaled_input = scale_features(input_df, method=scale_method)
+                # Pilih Pemda
+                selected_namapemda = st.selectbox(
+                    "Pilih Pemda:",
+                    sorted(df_year_filtered['namapemda'].unique())
+                )
+
+                if st.button("Cari Data Terdekat"):
+                    # Ambil baris data berdasarkan namapemda dan tahun
+                    selected_row = df_year_filtered[df_year_filtered['namapemda'] == selected_namapemda].iloc[0]
+
+                    # Ambil hanya kolom fitur yang dipakai clustering
+                    feature_row = selected_row[selected_columns].to_frame().T
+
+                    # Scale data input
+                    scaled_input = scale_features(feature_row, method=scale_method)
+
+                    # Cari tetangga terdekat
                     distances, indices = knn.kneighbors(scaled_input, n_neighbors=knn_k)
 
+                    # Kolom tambahan untuk ditampilkan
                     additional_cols = ['provinsi', 'tahun', 'namapemda']
                     available_additional = [col for col in additional_cols if col in df_filtered.columns]
                     display_cols = available_additional + selected_columns
 
-                    nearest_neighbors = df_filtered.loc[df_filtered.index[indices[0]]].copy()
-                    nearest_neighbors = nearest_neighbors[display_cols]
-                    nearest_neighbors['Jarak'] = distances[0]
+                    # Data input yang dipilih
+                    input_display = pd.DataFrame([selected_row[display_cols]])
 
-                    if 'knn' in locals():
-                        st.write("#### Data yang Dimasukkan:")
-                        st.dataframe(input_df)
-                        pred_cluster = knn.predict(scaled_input)[0]
-                        st.success(f"📌 Data input diprediksi masuk ke **Cluster {pred_cluster}**")
-                        
-                        st.write("Kolom yang akan ditampilkan:")
-                        st.write(display_cols)
+                    # Tetangga terdekat (dari data tahun yang sama)
+                    nearest_neighbors_global = df_filtered.iloc[indices[0]].copy()
+                    jarak_global = distances[0]
 
-                        st.write("### 🔍 Data Tetangga Terdekat:")
-                        st.dataframe(nearest_neighbors)
+                    # Filter sesuai tahun
+                    mask_tahun = nearest_neighbors_global['tahun'] == selected_year
+                    nearest_neighbors = nearest_neighbors_global[mask_tahun].copy()
 
-                                            
-                    else:
-                        st.warning("Model KNN belum dibuat. Jalankan KMeans dan KNN terlebih dahulu.")
+                    # Ambil jarak yang sesuai
+                    nearest_neighbors['Jarak'] = np.array(jarak_global)[mask_tahun]
+
+                    nearest_neighbors = nearest_neighbors[display_cols + ['Jarak']]
+
+                    # Tampilkan hasil
+                    st.write(f"### 📌 Data {selected_namapemda} Tahun {selected_year} (Input)")
+                    st.dataframe(input_display)
+
+                    st.write(f"### 🔍 Data Terdekat untuk {selected_namapemda} di Tahun {selected_year}")
+                    st.dataframe(nearest_neighbors)
+
+            else:
+                st.error("Kolom 'namapemda' atau 'tahun' tidak ditemukan di data.")
+
+
 
         
 
